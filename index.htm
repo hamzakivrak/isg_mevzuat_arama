@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>Mevzuat ZIP Arama</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:20px}
+    /* Input removed, keeping basic styles */
+    input,button{padding:6px;margin:0 5px 10px 0}
+    table{border-collapse:collapse;width:100%;margin-top:20px}
+    th,td{border:1px solid #ccc;padding:8px;text-align:left}
+    th{background:#f4f4f4}
+    tr.match-row{cursor:pointer}
+    tr.match-row:hover{background:#fafafa}
+    mark{background:yellow}
+    .target-line{background:#ffeecc}
+    #detailPanel{
+      display:none;position:fixed;top:10%;left:10%;right:10%;bottom:10%;
+      background:#fff;border:2px solid #333;box-shadow:0 0 10px rgba(0,0,0,.5);
+      padding:15px;overflow:auto;z-index:1000}
+    #detailPanel .closeBtn{
+      position:absolute;top:5px;right:10px;cursor:pointer;font-size:20px}
+    #overlay{
+      display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,.3);z-index:999}
+  </style>
+</head>
+
+<body>
+  <h1>Mevzuat ZIP Arama</h1>
+  <p>
+    1) Mevzuat arşivi GitHub üzerinden otomatik yüklenecektir.<br>
+    2) “kelime;<i>isteğe-bağlı dosya filtresi</i>” formatında arama yazın.<br>
+       Örn: <code>vergi; usul kanunu</code><br>
+    3) “Ara”ya tıklayın; sonuçlar listelenecektir.
+  </p>
+
+  <input type="text" id="searchInput" placeholder="Kelime[; dosya filtresi]" size="40">
+  <button id="searchButton">Ara</button>
+
+  <div id="results"></div>
+
+  <div id="overlay"></div>
+
+  <div id="detailPanel">
+    <span class="closeBtn">✕</span>
+    <h2 id="detailTitle"></h2>
+    <div id="detailContent"></div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+  <script>
+    // BURAYI KENDİ GITHUB PAGES URL'İNİZ İLE DEĞİŞTİRİN
+    const ZIP_URL = 'https://kullaniciadiniz.github.io/reponuz/mevzuat.zip';
+
+    let GLOBAL_MATCHES=[];
+    // Performans için ZIP'i bir kere indirip hafızada tutabiliriz
+    let cachedZipData = null; 
+
+    /*---------------  ARA  ----------------*/
+    document.getElementById('searchButton').addEventListener('click',async()=>{
+      const raw=document.getElementById('searchInput').value.trim();
+      const resEl=document.getElementById('results');
+      GLOBAL_MATCHES=[];
+      
+      if(!raw){alert('Kelime girin');return}
+
+      const [termPart,filterPart]=raw.split(';').map(s=>s.trim());
+      const term=termPart; const lcTerm=term.toLowerCase();
+      const filter=filterPart?filterPart.toLowerCase():null;
+
+      resEl.innerHTML='<p>Mevzuat taranıyor...</p>';
+
+      try{
+        let zip;
+        
+        // Eğer daha önce indirilmediyse indir
+        if(!cachedZipData) {
+            resEl.innerHTML='<p>Mevzuat dosyası indiriliyor...</p>';
+            const response = await fetch(ZIP_URL);
+            if (!response.ok) throw new Error(`Dosya indirilemedi: ${response.statusText}`);
+            cachedZipData = await response.arrayBuffer();
+        }
+
+        // JSZip ile hafızadaki veriyi aç
+        zip = await JSZip.loadAsync(cachedZipData);
+
+        await Promise.all(Object.values(zip.files).map(async f=>{
+          if(f.dir||!f.name.toLowerCase().endsWith('.txt')) return;
+
+          const mevzuat=f.name.replace(/\.txt$/i,'');
+          if(filter&&!mevzuat.toLowerCase().includes(filter)) return;
+
+          const content=await f.async('string');
+          const lines=content.split(/\r?\n/);
+
+          lines.forEach((ln,idx)=>{
+            if(ln.toLowerCase().includes(lcTerm)){
+              const m=ln.match(/madde\s+(\d+)/i);
+              GLOBAL_MATCHES.push({
+                mevzuatAdi:mevzuat,
+                maddeNo:m?m[1]:'-',
+                snippet:ln.trim(),
+                lineNumber:idx,
+                fullText:content
+              });
+            }
+          });
+        }));
+
+        if(!GLOBAL_MATCHES.length){resEl.innerHTML='<p>Bulunamadı.</p>';return;}
+
+        /* tablo */
+        let html='<table><thead><tr><th>Mevzuat</th><th>Mad.</th><th>Satır</th></tr></thead><tbody>';
+        GLOBAL_MATCHES.forEach((it,i)=>{
+          const snip=escapeHTML(it.snippet)
+            .replace(new RegExp(`(${escapeRe(term)})`,'gi'),'<mark>$1</mark>');
+          html+=`<tr class="match-row" data-i="${i}">
+                   <td>${escapeHTML(it.mevzuatAdi)}</td>
+                   <td>${escapeHTML(it.maddeNo)}</td>
+                   <td>${snip}</td></tr>`;
+        });
+        html+='</tbody></table>';
+        resEl.innerHTML=html;
+
+        document.querySelectorAll('.match-row').forEach(tr=>{
+          tr.addEventListener('click',()=>showDetail(GLOBAL_MATCHES[+tr.dataset.i],term));
+        });
+
+      }catch(e){
+        resEl.innerHTML=`<p style="color:red">Hata: ${e.message}<br>Not: Eğer dosyayı yerel bilgisayarda çalıştırıyorsanız CORS hatası alabilirsiniz. Bu HTML dosyasını da GitHub Pages'e yükleyip oradan çalıştırmanız önerilir.</p>`;
+      }
+    });
+
+    /*-------------  DETAY ve ODAK (Değişmedi) -------------*/
+    function showDetail(match,term){
+      document.getElementById('detailTitle').textContent=
+        match.mevzuatAdi+' – Madde '+match.maddeNo;
+
+      const cont=document.getElementById('detailContent');
+      cont.innerHTML='';
+
+      const lines=match.fullText.split(/\r?\n/);
+      lines.forEach((ln,idx)=>{
+        const div=document.createElement('div');
+        let html=escapeHTML(ln).replace(
+          new RegExp(`(${escapeRe(term)})`,'gi'),'<mark>$1</mark>');
+        if(idx===match.lineNumber){
+          div.className='target-line';
+          div.id='focus-line';
+        }
+        div.innerHTML=html;
+        cont.appendChild(div);
+      });
+
+      document.getElementById('overlay').style.display='block';
+      const panel=document.getElementById('detailPanel');
+      panel.style.display='block';
+
+      setTimeout(()=>{
+        const tgt=document.getElementById('focus-line');
+        if(tgt){
+          panel.scrollTop=Math.max(0,tgt.offsetTop-panel.clientHeight/2);
+        }
+      },0);
+    }
+
+    /*-------------  KAPAT (Değişmedi) -------------*/
+    function closePanel(){
+      document.getElementById('detailPanel').style.display='none';
+      document.getElementById('overlay').style.display='none';
+    }
+    document.querySelector('#detailPanel .closeBtn').addEventListener('click',closePanel);
+    document.getElementById('overlay').addEventListener('click',closePanel);
+
+    /*-------------  YARDIMCI (Değişmedi) -------------*/
+    const escapeHTML=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
+                         .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
+                         .replace(/'/g,'&#39;');
+    const escapeRe  =s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  </script>
+</body>
+</html>
