@@ -5,7 +5,6 @@
   <title>Mevzuat ZIP Arama</title>
   <style>
     body{font-family:Arial,Helvetica,sans-serif;margin:20px}
-    /* Input removed, keeping basic styles */
     input,button{padding:6px;margin:0 5px 10px 0}
     table{border-collapse:collapse;width:100%;margin-top:20px}
     th,td{border:1px solid #ccc;padding:8px;text-align:left}
@@ -31,7 +30,7 @@
   <p>
     1) Mevzuat arşivi GitHub üzerinden otomatik yüklenecektir.<br>
     2) “kelime;<i>isteğe-bağlı dosya filtresi</i>” formatında arama yazın.<br>
-       Örn: <code>vergi; usul kanunu</code><br>
+        Örn: <code>vergi; usul kanunu</code><br>
     3) “Ara”ya tıklayın; sonuçlar listelenecektir.
   </p>
 
@@ -57,6 +56,21 @@
     // Performans için ZIP'i bir kere indirip hafızada tutabiliriz
     let cachedZipData = null; 
 
+    /*------------- TÜRKÇE/İNGİLİZCE KARAKTER DUYARSIZ REGEX OLUŞTURUCU -------------*/
+    function createTrRegexPattern(text) {
+      return text.split('').map(char => {
+        if (/[iıİI]/.test(char)) return '[iıİI]';
+        if (/[sşSŞ]/.test(char)) return '[sşSŞ]';
+        if (/[gğGĞ]/.test(char)) return '[gğGĞ]';
+        if (/[uüUÜ]/.test(char)) return '[uüUÜ]';
+        if (/[oöOÖ]/.test(char)) return '[oöOÖ]';
+        if (/[cçCÇ]/.test(char)) return '[cçCÇ]';
+        // Regex özel karakterlerini kaçış karakteri ile koru
+        if (/[.*+?^${}()|[\]\\]/.test(char)) return '\\' + char;
+        return char;
+      }).join('');
+    }
+
     /*---------------  ARA  ----------------*/
     document.getElementById('searchButton').addEventListener('click',async()=>{
       const raw=document.getElementById('searchInput').value.trim();
@@ -66,8 +80,17 @@
       if(!raw){alert('Kelime girin');return}
 
       const [termPart,filterPart]=raw.split(';').map(s=>s.trim());
-      const term=termPart; const lcTerm=term.toLowerCase();
-      const filter=filterPart?filterPart.toLowerCase():null;
+      const term=termPart; 
+      const filter=filterPart ? filterPart : null;
+
+      // Arama ve filtreleme için Regex oluştur (g flag'i olmadan, sadece test için)
+      const searchPattern = createTrRegexPattern(term);
+      const testSearchRegex = new RegExp(searchPattern, 'i');
+      
+      let testFilterRegex = null;
+      if (filter) {
+        testFilterRegex = new RegExp(createTrRegexPattern(filter), 'i');
+      }
 
       resEl.innerHTML='<p>Mevzuat taranıyor...</p>';
 
@@ -89,13 +112,16 @@
           if(f.dir||!f.name.toLowerCase().endsWith('.txt')) return;
 
           const mevzuat=f.name.replace(/\.txt$/i,'');
-          if(filter&&!mevzuat.toLowerCase().includes(filter)) return;
+          
+          // Mevzuat adı filtresi kontrolü
+          if(testFilterRegex && !testFilterRegex.test(mevzuat)) return;
 
           const content=await f.async('string');
           const lines=content.split(/\r?\n/);
 
           lines.forEach((ln,idx)=>{
-            if(ln.toLowerCase().includes(lcTerm)){
+            // Satırda aranan kelime geçiyor mu?
+            if(testSearchRegex.test(ln)){
               const m=ln.match(/madde\s+(\d+)/i);
               GLOBAL_MATCHES.push({
                 mevzuatAdi:mevzuat,
@@ -110,11 +136,13 @@
 
         if(!GLOBAL_MATCHES.length){resEl.innerHTML='<p>Bulunamadı.</p>';return;}
 
-        /* tablo */
+        /* tablo oluşturma ve vurgulama */
+        // Vurgulama işlemi için 'gi' (global ve case-insensitive) regex kullanıyoruz
+        const highlightRegex = new RegExp('(' + searchPattern + ')', 'gi');
+        
         let html='<table><thead><tr><th>Mevzuat</th><th>Mad.</th><th>Satır</th></tr></thead><tbody>';
         GLOBAL_MATCHES.forEach((it,i)=>{
-          const snip=escapeHTML(it.snippet)
-            .replace(new RegExp(`(${escapeRe(term)})`,'gi'),'<mark>$1</mark>');
+          const snip=escapeHTML(it.snippet).replace(highlightRegex, '<mark>$1</mark>');
           html+=`<tr class="match-row" data-i="${i}">
                    <td>${escapeHTML(it.mevzuatAdi)}</td>
                    <td>${escapeHTML(it.maddeNo)}</td>
@@ -124,7 +152,7 @@
         resEl.innerHTML=html;
 
         document.querySelectorAll('.match-row').forEach(tr=>{
-          tr.addEventListener('click',()=>showDetail(GLOBAL_MATCHES[+tr.dataset.i],term));
+          tr.addEventListener('click',()=>showDetail(GLOBAL_MATCHES[+tr.dataset.i], searchPattern));
         });
 
       }catch(e){
@@ -132,8 +160,8 @@
       }
     });
 
-    /*-------------  DETAY ve ODAK (Değişmedi) -------------*/
-    function showDetail(match,term){
+    /*-------------  DETAY ve ODAK -------------*/
+    function showDetail(match, searchPattern){
       document.getElementById('detailTitle').textContent=
         match.mevzuatAdi+' – Madde '+match.maddeNo;
 
@@ -141,10 +169,12 @@
       cont.innerHTML='';
 
       const lines=match.fullText.split(/\r?\n/);
+      const highlightRegex = new RegExp('(' + searchPattern + ')', 'gi');
+
       lines.forEach((ln,idx)=>{
         const div=document.createElement('div');
-        let html=escapeHTML(ln).replace(
-          new RegExp(`(${escapeRe(term)})`,'gi'),'<mark>$1</mark>');
+        let html=escapeHTML(ln).replace(highlightRegex, '<mark>$1</mark>');
+        
         if(idx===match.lineNumber){
           div.className='target-line';
           div.id='focus-line';
@@ -165,7 +195,7 @@
       },0);
     }
 
-    /*-------------  KAPAT (Değişmedi) -------------*/
+    /*-------------  KAPAT  -------------*/
     function closePanel(){
       document.getElementById('detailPanel').style.display='none';
       document.getElementById('overlay').style.display='none';
@@ -173,12 +203,10 @@
     document.querySelector('#detailPanel .closeBtn').addEventListener('click',closePanel);
     document.getElementById('overlay').addEventListener('click',closePanel);
 
-    /*-------------  YARDIMCI (Değişmedi) -------------*/
+    /*-------------  YARDIMCI  -------------*/
     const escapeHTML=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
                          .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
                          .replace(/'/g,'&#39;');
-    const escapeRe  =s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   </script>
 </body>
-
 </html>
