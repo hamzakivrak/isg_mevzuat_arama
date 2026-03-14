@@ -2,48 +2,293 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mevzuat ZIP Arama</title>
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;margin:20px}
-    input,button{padding:6px;margin:0 5px 10px 0}
-    table{border-collapse:collapse;width:100%;margin-top:20px}
-    th,td{border:1px solid #ccc;padding:8px;text-align:left}
-    th{background:#f4f4f4}
-    tr.match-row{cursor:pointer}
-    tr.match-row:hover{background:#fafafa}
-    mark{background:yellow}
-    .target-line{background:#ffeecc}
-    #detailPanel{
-      display:none;position:fixed;top:10%;left:10%;right:10%;bottom:10%;
-      background:#fff;border:2px solid #333;box-shadow:0 0 10px rgba(0,0,0,.5);
-      padding:15px;overflow:auto;z-index:1000}
-    #detailPanel .closeBtn{
-      position:absolute;top:5px;right:10px;cursor:pointer;font-size:20px}
-    #overlay{
-      display:none;position:fixed;top:0;left:0;width:100%;height:100%;
-      background:rgba(0,0,0,.3);z-index:999}
+    /* Temel Ayarlar ve Renk Değişkenleri */
+    :root {
+      --primary-color: #0d6efd;
+      --primary-hover: #0b5ed7;
+      --bg-color: #f8f9fa;
+      --text-color: #212529;
+      --border-color: #dee2e6;
+      --highlight-bg: #fff3cd;
+      --target-line-bg: #e7f1ff;
+      --target-line-border: #0d6efd;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      line-height: 1.6;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 15px;
+      color: #2c3e50;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 10px;
+    }
+
+    /* Bilgi Kartı */
+    .info-card {
+      background-color: #e9ecef;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 25px;
+      font-size: 0.95rem;
+      color: #495057;
+      border-left: 4px solid var(--primary-color);
+    }
+    
+    .info-card code {
+      background: #dcdcdc;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 1rem;
+    }
+
+    /* Arama Alanı */
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+      flex-wrap: wrap;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      min-width: 250px;
+      padding: 12px 16px;
+      font-size: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.25);
+    }
+
+    button {
+      padding: 12px 24px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s, transform 0.1s;
+    }
+
+    button:hover {
+      background-color: var(--primary-hover);
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    /* Uyarı ve Bilgi Mesajları */
+    .alert {
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-weight: 500;
+    }
+    .alert-info { background-color: #cff4fc; color: #055160; }
+    .alert-danger { background-color: #f8d7da; color: #842029; }
+    .alert-warning { background-color: #fff3cd; color: #664d03; }
+
+    /* Tablo Tasarımı */
+    .table-responsive {
+      overflow-x: auto;
+      border-radius: 8px;
+      box-shadow: 0 0 0 1px var(--border-color);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      white-space: nowrap;
+    }
+
+    th, td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #495057;
+      position: sticky;
+      top: 0;
+    }
+
+    td.snippet-cell {
+      white-space: normal; /* Sadece metin kısmının alt satıra geçmesine izin ver */
+      min-width: 300px;
+    }
+
+    tr.match-row {
+      cursor: pointer;
+      transition: background-color 0.15s;
+    }
+
+    tr.match-row:hover {
+      background-color: #f1f3f5;
+    }
+
+    mark {
+      background-color: var(--highlight-bg);
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    /* Modal (Detay Paneli) Tasarımı */
+    #overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(2px);
+      z-index: 999;
+    }
+
+    #detailPanel {
+      display: none;
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 90%;
+      max-width: 900px;
+      max-height: 85vh;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      display: flex; /* Script içinde display bloğunu ayarlayacağız */
+      flex-direction: column;
+      z-index: 1000;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f8f9fa;
+    }
+
+    .modal-header h2 {
+      font-size: 1.2rem;
+      color: #2c3e50;
+      margin: 0;
+      padding-right: 20px;
+    }
+
+    .closeBtn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      line-height: 1;
+      color: #6c757d;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .closeBtn:hover {
+      color: #dc3545;
+    }
+
+    #detailContent {
+      padding: 20px;
+      overflow-y: auto;
+      font-size: 0.95rem;
+      line-height: 1.8;
+      color: #333;
+    }
+
+    .detail-line {
+      margin-bottom: 6px;
+    }
+
+    .target-line {
+      background-color: var(--target-line-bg);
+      border-left: 4px solid var(--target-line-border);
+      padding: 12px 15px;
+      margin: 15px 0;
+      border-radius: 0 6px 6px 0;
+      font-weight: 500;
+      color: #084298;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    /* Mobilde Tam Uyumluluk */
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      .container { padding: 15px; }
+      .search-box { flex-direction: column; }
+      button { width: 100%; }
+      .modal-header h2 { font-size: 1rem; }
+    }
   </style>
 </head>
 
 <body>
-  <h1>Mevzuat ZIP Arama</h1>
-  <p>
-    1) Mevzuat arşivi GitHub üzerinden otomatik yüklenecektir.<br>
-    2) “kelime;<i>isteğe-bağlı dosya filtresi</i>” formatında arama yazın.<br>
-        Örn: <code>vergi; usul kanunu</code><br>
-    3) “Ara”ya tıklayın; sonuçlar listelenecektir.
-  </p>
 
-  <input type="text" id="searchInput" placeholder="Kelime[; dosya filtresi]" size="40">
-  <button id="searchButton">Ara</button>
+  <div class="container">
+    <h1>Mevzuat ZIP Arama</h1>
+    
+    <div class="info-card">
+      <p>1) Mevzuat arşivi GitHub üzerinden otomatik yüklenecektir.</p>
+      <p>2) <strong>“kelime; <i>isteğe-bağlı dosya filtresi</i>”</strong> formatında arama yazın.<br>
+          Örn: <code>vergi; usul kanunu</code></p>
+      <p>3) “Ara”ya tıklayın; sonuçlar listelenecektir.</p>
+    </div>
 
-  <div id="results"></div>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Aranacak Kelime[; dosya filtresi]">
+      <button id="searchButton">Bul</button>
+    </div>
+
+    <div id="results"></div>
+  </div>
 
   <div id="overlay"></div>
 
-  <div id="detailPanel">
-    <span class="closeBtn">✕</span>
-    <h2 id="detailTitle"></h2>
+  <div id="detailPanel" style="display: none;">
+    <div class="modal-header">
+      <h2 id="detailTitle">Detay</h2>
+      <button class="closeBtn">✕</button>
+    </div>
     <div id="detailContent"></div>
   </div>
 
@@ -72,16 +317,19 @@
     }
 
     /*---------------  ARA  ----------------*/
-    document.getElementById('searchButton').addEventListener('click',async()=>{
-      const raw=document.getElementById('searchInput').value.trim();
-      const resEl=document.getElementById('results');
-      GLOBAL_MATCHES=[];
+    document.getElementById('searchButton').addEventListener('click', async () => {
+      const raw = document.getElementById('searchInput').value.trim();
+      const resEl = document.getElementById('results');
+      GLOBAL_MATCHES = [];
       
-      if(!raw){alert('Kelime girin');return}
+      if (!raw) {
+        resEl.innerHTML = '<div class="alert alert-warning">Lütfen aranacak bir kelime girin.</div>';
+        return;
+      }
 
-      const [termPart,filterPart]=raw.split(';').map(s=>s.trim());
-      const term=termPart; 
-      const filter=filterPart ? filterPart : null;
+      const [termPart, filterPart] = raw.split(';').map(s => s.trim());
+      const term = termPart; 
+      const filter = filterPart ? filterPart : null;
 
       // Arama ve filtreleme için Regex oluştur (g flag'i olmadan, sadece test için)
       const searchPattern = createTrRegexPattern(term);
@@ -92,14 +340,14 @@
         testFilterRegex = new RegExp(createTrRegexPattern(filter), 'i');
       }
 
-      resEl.innerHTML='<p>Mevzuat taranıyor...</p>';
+      resEl.innerHTML = '<div class="alert alert-info">Mevzuat dosyaları taranıyor, lütfen bekleyin...</div>';
 
-      try{
+      try {
         let zip;
         
         // Eğer daha önce indirilmediyse indir
-        if(!cachedZipData) {
-            resEl.innerHTML='<p>Mevzuat dosyası indiriliyor...</p>';
+        if (!cachedZipData) {
+            resEl.innerHTML = '<div class="alert alert-info">Mevzuat dosyası indiriliyor (İlk arama için biraz sürebilir)...</div>';
             const response = await fetch(ZIP_URL);
             if (!response.ok) throw new Error(`Dosya indirilemedi: ${response.statusText}`);
             cachedZipData = await response.arrayBuffer();
@@ -108,105 +356,128 @@
         // JSZip ile hafızadaki veriyi aç
         zip = await JSZip.loadAsync(cachedZipData);
 
-        await Promise.all(Object.values(zip.files).map(async f=>{
-          if(f.dir||!f.name.toLowerCase().endsWith('.txt')) return;
+        await Promise.all(Object.values(zip.files).map(async f => {
+          if (f.dir || !f.name.toLowerCase().endsWith('.txt')) return;
 
-          const mevzuat=f.name.replace(/\.txt$/i,'');
+          const mevzuat = f.name.replace(/\.txt$/i, '');
           
           // Mevzuat adı filtresi kontrolü
-          if(testFilterRegex && !testFilterRegex.test(mevzuat)) return;
+          if (testFilterRegex && !testFilterRegex.test(mevzuat)) return;
 
-          const content=await f.async('string');
-          const lines=content.split(/\r?\n/);
+          const content = await f.async('string');
+          const lines = content.split(/\r?\n/);
 
-          lines.forEach((ln,idx)=>{
+          lines.forEach((ln, idx) => {
             // Satırda aranan kelime geçiyor mu?
-            if(testSearchRegex.test(ln)){
-              const m=ln.match(/madde\s+(\d+)/i);
+            if (testSearchRegex.test(ln)) {
+              const m = ln.match(/madde\s+(\d+)/i);
               GLOBAL_MATCHES.push({
-                mevzuatAdi:mevzuat,
-                maddeNo:m?m[1]:'-',
-                snippet:ln.trim(),
-                lineNumber:idx,
-                fullText:content
+                mevzuatAdi: mevzuat,
+                maddeNo: m ? m[1] : '-',
+                snippet: ln.trim(),
+                lineNumber: idx,
+                fullText: content
               });
             }
           });
         }));
 
-        if(!GLOBAL_MATCHES.length){resEl.innerHTML='<p>Bulunamadı.</p>';return;}
+        if (!GLOBAL_MATCHES.length) {
+          resEl.innerHTML = '<div class="alert alert-warning">Aradığınız kriterlere uygun sonuç bulunamadı.</div>';
+          return;
+        }
 
-        /* tablo oluşturma ve vurgulama */
+        /* Tablo oluşturma ve vurgulama */
         // Vurgulama işlemi için 'gi' (global ve case-insensitive) regex kullanıyoruz
         const highlightRegex = new RegExp('(' + searchPattern + ')', 'gi');
         
-        let html='<table><thead><tr><th>Mevzuat</th><th>Mad.</th><th>Satır</th></tr></thead><tbody>';
-        GLOBAL_MATCHES.forEach((it,i)=>{
-          const snip=escapeHTML(it.snippet).replace(highlightRegex, '<mark>$1</mark>');
-          html+=`<tr class="match-row" data-i="${i}">
+        let html = '<div class="table-responsive"><table><thead><tr><th>Mevzuat</th><th>Madde</th><th>Bulunan Metin</th></tr></thead><tbody>';
+        GLOBAL_MATCHES.forEach((it, i) => {
+          const snip = escapeHTML(it.snippet).replace(highlightRegex, '<mark>$1</mark>');
+          html += `<tr class="match-row" data-i="${i}">
                    <td>${escapeHTML(it.mevzuatAdi)}</td>
                    <td>${escapeHTML(it.maddeNo)}</td>
-                   <td>${snip}</td></tr>`;
+                   <td class="snippet-cell">${snip}</td></tr>`;
         });
-        html+='</tbody></table>';
-        resEl.innerHTML=html;
+        html += '</tbody></table></div>';
+        resEl.innerHTML = html;
 
-        document.querySelectorAll('.match-row').forEach(tr=>{
-          tr.addEventListener('click',()=>showDetail(GLOBAL_MATCHES[+tr.dataset.i], searchPattern));
+        document.querySelectorAll('.match-row').forEach(tr => {
+          tr.addEventListener('click', () => showDetail(GLOBAL_MATCHES[+tr.dataset.i], searchPattern));
         });
 
-      }catch(e){
-        resEl.innerHTML=`<p style="color:red">Hata: ${e.message}<br>Not: Eğer dosyayı yerel bilgisayarda çalıştırıyorsanız CORS hatası alabilirsiniz. Bu HTML dosyasını da GitHub Pages'e yükleyip oradan çalıştırmanız önerilir.</p>`;
+      } catch (e) {
+        resEl.innerHTML = `<div class="alert alert-danger"><strong>Hata:</strong> ${e.message}<br><br><small>Not: Eğer dosyayı yerel bilgisayarda çalıştırıyorsanız CORS hatası alabilirsiniz. Bu HTML dosyasını da GitHub Pages'e yükleyip oradan çalıştırmanız önerilir.</small></div>`;
       }
     });
 
+    // Enter tuşu ile arama yapabilme kolaylığı
+    document.getElementById('searchInput').addEventListener('keypress', function (e) {
+        if (e.key === 'Enter') {
+            document.getElementById('searchButton').click();
+        }
+    });
+
     /*-------------  DETAY ve ODAK -------------*/
-    function showDetail(match, searchPattern){
-      document.getElementById('detailTitle').textContent=
-        match.mevzuatAdi+' – Madde '+match.maddeNo;
+    function showDetail(match, searchPattern) {
+      document.getElementById('detailTitle').textContent = match.mevzuatAdi + ' – Madde ' + match.maddeNo;
 
-      const cont=document.getElementById('detailContent');
-      cont.innerHTML='';
+      const cont = document.getElementById('detailContent');
+      cont.innerHTML = '';
 
-      const lines=match.fullText.split(/\r?\n/);
+      const lines = match.fullText.split(/\r?\n/);
       const highlightRegex = new RegExp('(' + searchPattern + ')', 'gi');
 
-      lines.forEach((ln,idx)=>{
-        const div=document.createElement('div');
-        let html=escapeHTML(ln).replace(highlightRegex, '<mark>$1</mark>');
+      lines.forEach((ln, idx) => {
+        const div = document.createElement('div');
+        let html = escapeHTML(ln).replace(highlightRegex, '<mark>$1</mark>');
         
-        if(idx===match.lineNumber){
-          div.className='target-line';
-          div.id='focus-line';
+        div.className = 'detail-line';
+
+        if (idx === match.lineNumber) {
+          div.className = 'target-line';
+          div.id = 'focus-line';
         }
-        div.innerHTML=html;
+        
+        // Boş satırları okunaklı tutmak için
+        div.innerHTML = html || '&nbsp;';
         cont.appendChild(div);
       });
 
-      document.getElementById('overlay').style.display='block';
-      const panel=document.getElementById('detailPanel');
-      panel.style.display='block';
+      document.getElementById('overlay').style.display = 'block';
+      const panel = document.getElementById('detailPanel');
+      panel.style.display = 'flex'; // Modal için flex yapısını açıyoruz
 
-      setTimeout(()=>{
-        const tgt=document.getElementById('focus-line');
-        if(tgt){
-          panel.scrollTop=Math.max(0,tgt.offsetTop-panel.clientHeight/2);
+      setTimeout(() => {
+        const tgt = document.getElementById('focus-line');
+        if (tgt) {
+          // Modalın içindeki scroll edilen alan 'detailContent'
+          const scrollContainer = document.getElementById('detailContent');
+          scrollContainer.scrollTop = Math.max(0, tgt.offsetTop - scrollContainer.clientHeight / 2);
         }
-      },0);
+      }, 0);
     }
 
     /*-------------  KAPAT  -------------*/
-    function closePanel(){
-      document.getElementById('detailPanel').style.display='none';
-      document.getElementById('overlay').style.display='none';
+    function closePanel() {
+      document.getElementById('detailPanel').style.display = 'none';
+      document.getElementById('overlay').style.display = 'none';
     }
-    document.querySelector('#detailPanel .closeBtn').addEventListener('click',closePanel);
-    document.getElementById('overlay').addEventListener('click',closePanel);
+    
+    document.querySelector('.closeBtn').addEventListener('click', closePanel);
+    document.getElementById('overlay').addEventListener('click', closePanel);
+    
+    // ESC tuşu ile paneli kapatma kolaylığı
+    document.addEventListener('keydown', function(event){
+        if(event.key === "Escape"){
+            closePanel();
+        }
+    });
 
     /*-------------  YARDIMCI  -------------*/
-    const escapeHTML=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;')
-                         .replace(/>/g,'&gt;').replace(/"/g,'&quot;')
-                         .replace(/'/g,'&#39;');
+    const escapeHTML = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                             .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+                             .replace(/'/g, '&#39;');
   </script>
 </body>
 </html>
